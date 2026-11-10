@@ -1,0 +1,15 @@
+[build]
+  command = "mkdir -p public netlify/functions netlify/lib && cp index.html public/ && cp dados.mjs acao.mjs netlify/functions/ && cp auth.mjs regras.mjs sheets.mjs netlify/lib/"
+  publish = "public"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+    Referrer-Policy = "no-referrer"
+    X-Content-Type-Options = "nosniff"
+    Cache-Control = "no-store"
