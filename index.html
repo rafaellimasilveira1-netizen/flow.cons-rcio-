@@ -114,7 +114,7 @@ var FONTE=['Tráfego','Repescagem','Discador','Indicação','Instagram','Cliente
 var ST=['Novo','Reunião agendada','No-show','Negociação','Fechado','Aguardando documentação','Aguardando auditoria','Aguardando digitação','Aguardando pagamento','Pago','Perdido'];
 var K='';try{K=new URLSearchParams(location.search).get('k')||sessionStorage.getItem('k')||'';if(K)sessionStorage.setItem('k',K);}catch(e){}
 var H=hojeStr(),amanha=addDias(H,1);
-var closers=[],pessoas=[],clientes=[],agenda=[],disp=[],eu={nome:'',perfil:'sdr'},busy=false;
+var leadsL=[],closers=[],pessoas=[],clientes=[],agenda=[],disp=[],eu={nome:'',perfil:'sdr'},busy=false;
 function nrm(s){return String(s==null?'':s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();}
 function setPeriodo(p){var m=H.slice(0,8)+'01',w=dow(H)||7;if(p==='hoje'){S.de=H;S.ate=H;}else if(p==='semana'){S.de=addDias(H,-(w-1));S.ate=addDias(H,7-w);}else if(p==='mes'){S.de=m;var d=m;while(addDias(d,1).slice(0,7)===H.slice(0,7))d=addDias(d,1);S.ate=d;}else{S.de='2000-01-01';S.ate='2100-12-31';}S.preset=p;}
 function defCloser(){var n=closers.map(function(c){return c.nome;});return eu.perfil!=='sdr'&&n.indexOf(eu.nome)>=0?eu.nome:(n[0]||'');}
@@ -131,7 +131,7 @@ function livre(cl,d,h){var ini=d+' '+h;return ini>agoraStr()&&!agenda.some(funct
 function aviso(t,tipo,acao){S.msg={t:t,tipo:tipo||'i',acao:acao||null};render();window.scrollTo(0,0);}
 /* ---- conversa com o servidor ---- */
 function api(path,body){return fetch('/.netlify/functions/'+path,{method:body?'POST':'GET',headers:{'x-acesso':K,'content-type':'application/json'},body:body?JSON.stringify(body):undefined,cache:'no-store'}).then(function(r){return r.json().then(function(j){j._s=r.status;return j;});}).catch(function(){return{erro:'Sem conexão. Tente de novo.',_s:0};});}
-function aplicar(j){eu=j.eu;closers=j.closers;pessoas=j.pessoas;clientes=j.clientes;agenda=j.agenda;disp=j.disp;S.meta=j.config.meta;S.metaProsp=j.config.metaProsp||{};S.metaCred=j.config.metaCred;S.superCred=j.config.superCred;S.folgas=j.config.folgas;if(!S.closer||nomesClosers().indexOf(S.closer)<0)S.closer=defCloser();if(!S.agc||(S.agc!=='*'&&nomesClosers().indexOf(S.agc)<0))S.agc=eu.perfil==='closer'?defCloser():'*';}
+function aplicar(j){leadsL=j.leads||[];eu=j.eu;closers=j.closers;pessoas=j.pessoas;clientes=j.clientes;agenda=j.agenda;disp=j.disp;S.meta=j.config.meta;S.metaProsp=j.config.metaProsp||{};S.metaCred=j.config.metaCred;S.superCred=j.config.superCred;S.folgas=j.config.folgas;if(!S.closer||nomesClosers().indexOf(S.closer)<0)S.closer=defCloser();if(!S.agc||(S.agc!=='*'&&nomesClosers().indexOf(S.agc)<0))S.agc=eu.perfil==='closer'?defCloser():'*';}
 function nomesClosers(){return closers.map(function(c){return c.nome;});}
 function carregar(){return api('dados').then(function(j){if(j.erro){return j;}aplicar(j);return j;});}
 function fatal(msg){document.getElementById('tabs').innerHTML='';document.getElementById('quem').textContent='';document.getElementById('app').innerHTML='<div class="msg e"><span>'+esc(msg)+'</span></div>';}
@@ -182,6 +182,34 @@ function erroCampos(o){if(!o.nome.trim())return'Preencha o nome completo.';if(!o
 window.editar=function(){var c=S.cli;S.e={nome:c.Nome,sexo:c.Sexo,tf:c.Tel||'',fin:c.Finalidade,fonte:c.Fonte,cred:c.Credito?fm(c.Credito):'',ent:fm(c.Entrada),par:fm(c.Parcela),obs:c.Obs};S.ed=true;render();};
 window.salvarEd=function(){var o=S.e,er=erroCampos(o);if(er)return aviso(er,'e');var tel=S.cli.Telefone;exec({acao:'editarCliente',telefone:tel,nome:o.nome,sexo:o.sexo,tf:o.tf,fin:o.fin,fonte:o.fonte,cred:o.cred,ent:o.ent,par:o.par,obs:o.obs},function(){S.ed=false;});};
 function wa(a,tipo){var nm=nomeDe(a.Telefone).split(' ')[0],h=hm(a.ini),lk=(closers.filter(function(x){return x.nome===a.Closer;})[0]||closers[0]).meet;var tx=tipo==='manha'?'Bom dia, '+nm+'! Passando pra confirmar nossa reunião de hoje às '+h+'. Tudo certo? Link: '+lk:'Oi, '+nm+'! Nossa reunião começa em 20 minutos ('+h+'). Link: '+lk;return 'https://wa.me/55'+a.Telefone+'?text='+encodeURIComponent(tx);}
+/* ---------- aba Leads: quem a Deia qualificou no WhatsApp ---------- */
+var ST_LEAD=['Novo','Chamou','Agendou','Sem retorno','Fechou','Descartado'];
+S.lf=S.lf||'abertos';
+function milR(n){return n?(n>=1000?'R$ '+Math.round(n/1000).toLocaleString('pt-BR')+' mil':brl(n)):'';}
+function pillLead(st){var c=st==='Agendou'||st==='Fechou'?'ok':st==='Descartado'||st==='Sem retorno'?'no':st==='Novo'?'gold':'';return '<span class="pill '+c+'">'+esc(st)+'</span>';}
+function quando(s){s=String(s||'');return s?s.slice(8,10)+'/'+s.slice(5,7)+' '+s.slice(11,16):'';}
+window.leadSt=function(t,v){exec({acao:'leadStatus',telefone:t,status:v});};
+window.leadObs=function(t,v){exec({acao:'leadStatus',telefone:t,obs:v});};
+window.leadAgendar=function(t){var l=leadsL.filter(function(x){return x.Telefone===t;})[0];if(!l)return;var c=achaCli(t);
+  S.n={tel:t,nome:l.Nome||(c?c.Nome:''),sexo:c?c.Sexo:'',tf:l.Tf||(c?(c.Tel||''):''),fin:FIN.indexOf(l.Tipo)>=0?l.Tipo:(c?c.Finalidade:''),fonte:c?c.Fonte:'',cred:l.Credito?fm(l.Credito):(c&&c.Credito?fm(c.Credito):''),ent:l.Entrada?fm(l.Entrada):'',par:l.Parcela?fm(l.Parcela):'',
+    obs:[l.ObsDeia,l.Contemplada==='Sim'?'Quer carta contemplada':'',l.Prazo?'Prazo: '+l.Prazo:'',l.Disse?'Disse: '+l.Disse:''].filter(Boolean).join(' · ').slice(0,900),sel:'',_pre:t};
+  S.tab='novo';S.msg=null;render();window.scrollTo(0,0);};
+function vLeads(){var f=S.lf,lista=leadsL.filter(function(l){if(f==='abertos')return ['Novo','Chamou'].indexOf(l.Status)>=0;if(f==='todos')return true;return l.Status===f;})
+   .sort(function(a,b){var o=function(x){return x.Status==='Novo'?0:1;};return o(a)-o(b)||(a.Recebido<b.Recebido?1:-1);});
+  var cont=function(k){return leadsL.filter(function(l){return k==='abertos'?['Novo','Chamou'].indexOf(l.Status)>=0:k==='todos'?true:l.Status===k;}).length;};
+  var h='<div class="controls"><div class="seg">'+[['abertos','Em aberto'],['Agendou','Agendou'],['Sem retorno','Sem retorno'],['Fechou','Fechou'],['Descartado','Descartado'],['todos','Todos']].map(function(x){return '<button aria-pressed="'+(f===x[0])+'" class="'+(f===x[0]?'on':'')+'" onclick="setp(\'lf\',\''+x[0]+'\')">'+x[1]+' ('+cont(x[0])+')</button>';}).join('')+'</div></div>';
+  h+='<div class="panel"><h2>Leads com interesse que vieram do WhatsApp'+info('A Deia conversa com quem preencheu o formulário. Quem mostra interesse (ou pede pra falar com a especialista) aparece aqui com o que já disse. Chame no WhatsApp, marque o andamento e, quando marcar a reunião, use Agendar: os dados já vêm preenchidos.')+'</h2>';
+  if(!lista.length)return h+'<div class="empty">Nenhum lead aqui agora.</div></div>';
+  h+='<div class="scroll"><table><thead><tr><th>Recebido</th><th>Cliente</th><th>Interesse</th><th>O que disse</th><th>Andamento</th><th></th></tr></thead><tbody>';
+  lista.forEach(function(l){var t=l.Telefone,wa='https://wa.me/55'+t;
+    h+='<tr><td class="m">'+esc(quando(l.Recebido))+'</td>'+
+      '<td><div class="name">'+esc(l.Nome||'Sem nome')+'</div><a class="m" href="'+wa+'" target="_blank" rel="noopener">'+esc(t.replace(/^(\d{2})(\d{4,5})(\d{4})$/,'($1) $2-$3'))+' ↗</a>'+(l.EtapaDeia?'<div class="m">Deia: '+esc(l.EtapaDeia)+'</div>':'')+'</td>'+
+      '<td><div class="name">'+esc(milR(l.Credito)||'valor ?')+'</div><div class="m">'+esc([l.Tipo,l.Contemplada==='Sim'?'quer contemplada':'',l.Entrada?'entrada '+milR(l.Entrada):'',l.Parcela?'parcela '+milR(l.Parcela):'',l.Prazo].filter(Boolean).join(' · '))+'</div>'+(l.ObsDeia?'<div class="m"><b>'+esc(l.ObsDeia)+'</b></div>':'')+'</td>'+
+      '<td class="m" style="max-width:360px">'+esc(l.Disse)+'</td>'+
+      '<td>'+pillLead(l.Status)+'<div style="margin-top:6px"><select onchange="leadSt(\''+t+'\',this.value)">'+ST_LEAD.map(function(x){return '<option'+(x===l.Status?' selected':'')+'>'+x+'</option>';}).join('')+'</select></div>'+
+        '<input style="margin-top:6px" placeholder="Obs (ex.: liga à tarde)" value="'+esc(l.Obs)+'" onchange="leadObs(\''+t+'\',this.value)">'+(l.Quem?'<div class="m">'+esc(l.Quem)+' · '+esc(quando(l.Atualizado))+'</div>':'')+'</td>'+
+      '<td class="act">'+(['Fechou','Descartado'].indexOf(l.Status)<0?'<button class="sm primary" onclick="leadAgendar(\''+t+'\')">Agendar</button>':'')+'</td></tr>';});
+  return h+'</tbody></table></div></div>';}
 /* ---------- telas ---------- */
 function opts(l,sel,ph){return '<option value="">'+ph+'</option>'+l.map(function(x){return '<option'+(x===sel?' selected':'')+'>'+esc(x)+'</option>';}).join('');}
 var MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -213,11 +241,11 @@ function venc(r){return r.Status==='Agendada'&&toMin(r.ini)+30<=toMin(agoraStr()
 function pendEu(){return eu.perfil==='sdr'?[]:agenda.filter(function(r){return venc(r)&&r.Closer===eu.nome;}).sort(function(a,b){return a.ini<b.ini?-1:1;});}
 function pendBanner(){var l=pendEu();if(!l.length)return '';var r=l[0];return '<div class="warnbox"><span><b>'+l.length+(l.length===1?' reunião sem resultado':' reuniões sem resultado')+'.</b> Registre o resultado, reagende ou cancele pra poder agendar de novo. A mais antiga é de '+fmtData(r.ini.slice(0,10))+' às '+hm(r.ini)+' ('+esc(nomeDe(r.Telefone))+').</span><button class="sm primary" onclick="verPend()">Resolver agora</button></div>';}
 window.verPend=function(){var l=pendEu();if(!l.length)return;agDia(l[0].ini.slice(0,10));S.agc=eu.nome;S.tab='agenda';S.res=l[0].ID;S.rv='';S.pt='';render();};
-function render(){if(S.tab==='painel'||S.tab==='agenda')usarPer(S.tab);var abas=[['painel','Painel'],['novo','Novo cliente'],['agenda','Agenda'],['horarios','Horários'],['clientes','Clientes'],['config','Configurações']].filter(function(a){return !(a[0]==='config'&&eu.perfil!=='gestor')&&!(a[0]==='horarios'&&eu.perfil==='sdr');});
+function render(){if(S.tab==='painel'||S.tab==='agenda')usarPer(S.tab);var nl=leadsL.filter(function(l){return l.Status==='Novo';}).length;var abas=[['painel','Painel'],['leads','Leads'+(nl?' ('+nl+')':'')],['novo','Novo cliente'],['agenda','Agenda'],['horarios','Horários'],['clientes','Clientes'],['config','Configurações']].filter(function(a){return !(a[0]==='config'&&eu.perfil!=='gestor')&&!(a[0]==='horarios'&&eu.perfil==='sdr');});
  document.getElementById('tabs').innerHTML=abas.map(function(t){return '<button aria-selected="'+(S.tab===t[0])+'" onclick="ir(\''+t[0]+'\')">'+t[1]+'</button>';}).join('');
  document.getElementById('quem').innerHTML='<b>'+esc(eu.nome)+'</b> · '+({sdr:'SDR',closer:'closer',gestor:'gestor'}[eu.perfil]);
  var h='';if(S.msg)h+='<div class="msg '+(S.msg.acao?'i':S.msg.tipo)+'"><span>'+esc(S.msg.t)+'</span>'+(S.msg.acao?'<button class="sm primary" onclick="sim()">Sim</button><button class="sm" onclick="nao()">Não</button>':'')+'</div>';
- if(S.tab==='novo'||S.tab==='agenda')h+=pendBanner();h+={painel:vPainel,novo:vNovo,agenda:vAgenda,horarios:vHorarios,clientes:vClientes,config:vConfig}[S.tab]();document.getElementById('app').innerHTML=h;if(S.tab==='clientes'&&!S.cli)lista();sinoRender();}
+ if(S.tab==='novo'||S.tab==='agenda')h+=pendBanner();h+={painel:vPainel,leads:vLeads,novo:vNovo,agenda:vAgenda,horarios:vHorarios,clientes:vClientes,config:vConfig}[S.tab]();document.getElementById('app').innerHTML=h;if(S.tab==='clientes'&&!S.cli)lista();sinoRender();}
 function minhas(){return agenda.filter(function(a){if(eu.perfil==='sdr'&&a.SDR!==eu.nome)return false;if(eu.perfil==='closer'&&a.Closer!==eu.nome)return false;if(eu.perfil==='gestor'&&S.pessoa&&a.SDR!==S.pessoa&&a.Closer!==S.pessoa)return false;return true;});}
 function noPeriodo(d){var d0=d.slice(0,10);return d0>=S.de&&d0<=S.ate;}
 function vPainel(){var m=minhas().filter(function(a){return a.Status!=='Reagendada'&&noPeriodo(a.ini)&&(a.SDR===a.Closer?S.tProp:S.tSdr);}),f=function(s){return m.filter(function(a){return a.Status===s;});};

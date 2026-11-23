@@ -35,3 +35,9 @@ Abas da planilha
 Clientes, Agenda, Disponibilidade (horários de cada closer), Config (metas e dias sem expediente), Acessos, Log, Propostas (ainda não ligada ao painel).
 Dá pra olhar e filtrar tudo direto na planilha, mas edite pelo painel. Os dados têm formato fixo.
 
+
+Aba Leads (novo)
+- Os leads com interesse que a Deia qualifica no WhatsApp aparecem na aba Leads do painel, com o que a pessoa disse (valor, tipo, contemplada, entrada, observação).
+- A Paula marca o andamento (Novo, Chamou, Agendou, Sem retorno, Fechou, Descartado) e uma observação. Isso volta pro sistema de WhatsApp: se ela chamou ou agendou, a Deia para de falar com o cliente; Descartado vira Sem interesse.
+- O botão Agendar abre o Novo cliente já preenchido. Quando a reunião é marcada, o lead vira Agendou sozinho.
+- A aba Leads da planilha é criada automaticamente no primeiro lead. Não precisa mexer na planilha.

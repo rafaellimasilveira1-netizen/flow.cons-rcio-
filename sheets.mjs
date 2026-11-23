@@ -78,3 +78,14 @@ export async function gravar(range, linhas) {
   }
   return chamar(`/values/${encodeURIComponent(range)}?valueInputOption=RAW`, { method: 'PUT', body: JSON.stringify({ values: linhas }) });
 }
+
+/** Cria a aba (se ainda não existe) com o cabeçalho na linha 1. */
+export async function criarAba(aba, cabecalho) {
+  if (process.env.MOCK_SHEETS) { if (!mock.mem[aba]) mock.mem[aba] = [[...cabecalho]]; return; }
+  try {
+    await chamar(':batchUpdate', { method: 'POST', body: JSON.stringify({ requests: [{ addSheet: { properties: { title: aba } } }] }) });
+  } catch (e) {
+    if (!/already exists|já existe/i.test(e.message)) throw e;
+  }
+  await gravar(`'${aba}'!A1`, [cabecalho]);
+}

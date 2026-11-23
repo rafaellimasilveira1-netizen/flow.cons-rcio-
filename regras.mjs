@@ -1,4 +1,4 @@
-import { ler, adicionar, gravar } from './sheets.mjs';
+import { ler, adicionar, gravar, criarAba } from './sheets.mjs';
 import { acharAcesso, norm, ativo } from './auth.mjs';
 
 export const ETAPAS = ['Fechado', 'Aguardando documentação', 'Aguardando auditoria', 'Aguardando digitação', 'Aguardando pagamento', 'Pago'];
@@ -6,6 +6,9 @@ export const FIN = ['Imóvel', 'Automóveis', 'Agro', 'Capital de giro', 'Constr
 export const FONTE = ['Tráfego', 'Repescagem', 'Discador', 'Indicação', 'Instagram', 'Cliente carteira', 'Orgânico'];
 export const CLI = ['ID', 'Telefone', 'Nome', 'Sexo', 'Tel', 'Finalidade', 'Fonte', 'Crédito', 'Entrada', 'Parcela', 'Observações', 'Nº de cadastros', 'Status', 'SDR', 'Closer', 'Cadastrado em', 'Atualizado em', 'Pago em'];
 export const AG = ['ID', 'Telefone', 'Closer', 'SDR (quem agendou)', 'Início', 'Fim', 'Status', 'Resultado', 'Parecer da closer', 'Confirmação da manhã', 'Confirmação de 20 min', 'Criado em', 'Atualizado em'];
+// Aba Leads: quem a Deia (WhatsApp) qualificou com interesse. A Paula chama e marca o andamento.
+export const LEADS = ['ID', 'Telefone', 'Nome', 'Tipo', 'Crédito', 'Entrada', 'Parcela', 'Prazo', 'Contemplada', 'Experiência', 'O que disse', 'Observação da Deia', 'Etapa na Deia', 'Origem', 'Status', 'Responsável', 'Obs da Paula', 'Recebido em', 'Atualizado em', 'Quem mexeu', 'Nosso número'];
+export const ST_LEAD = ['Novo', 'Chamou', 'Agendou', 'Sem retorno', 'Fechou', 'Descartado'];
 const DIAS = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'];
 
 export class Erro extends Error { constructor(msg, status = 400, extra = {}) { super(msg); this.status = status; this.extra = extra; } }
@@ -50,6 +53,9 @@ export async function carregar(chave) {
     ler(["'Acessos'!A1:H100", "'Clientes'!A1:R", "'Agenda'!A1:M", "'Log'!A1:E", "'Config'!A1:C100"], 'raw'),
     ler(["'Disponibilidade'!A1:G"], 'fmt'),
   ]);
+  // a aba Leads pode ainda não existir (é criada no primeiro lead que chega)
+  let leads = [];
+  try { leads = objs((await ler(["'Leads'!A1:U"], 'raw'))[0]); } catch { leads = []; }
   const eu = acharAcesso(acessos, chave);
   if (!eu) throw new Erro('Link inválido ou desativado. Fale com o gestor.', 401);
   const ah = (acessos[0] || []).map(norm);
@@ -60,7 +66,7 @@ export async function carregar(chave) {
   const meta = {}; pessoas.forEach((p) => { meta[p.nome] = num(cfg['meta_reunioes_' + p.nome]); });
   const metaProsp = {}; pessoas.forEach((p) => { metaProsp[p.nome] = num(cfg['meta_prospeccao_' + p.nome]); });
   const config_ = { meta, metaProsp, metaCred: num(cfg.meta_credito), superCred: num(cfg.super_meta_credito), folgas: String(cfg.folgas || '').split(/[\s,;]+/).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)) };
-  return { eu, pessoas, closers, cfg, config: config_, clientes: objs(clientes), agenda: objs(agenda), disp: objs(disp), log: objs(log), acessosRaw: acessos };
+  return { eu, pessoas, closers, cfg, config: config_, clientes: objs(clientes), agenda: objs(agenda), disp: objs(disp), log: objs(log), acessosRaw: acessos, leads };
 }
 
 /* ---------- formato que o painel recebe ---------- */
@@ -77,7 +83,13 @@ export function paraFront(ctx) {
     Resultado: r.Resultado || '', Parecer: r['Parecer da closer'] || '', manha: String(r['Confirmação da manhã'] || ''), min20: String(r['Confirmação de 20 min'] || ''),
   }));
   const disp = ctx.disp.map((d) => ({ Closer: d.Closer, Tipo: d.Tipo, Dia: d['Dia da semana'], Data: dataIso(d.Data), Ini: hm(d['Início']), Fim: hm(d.Fim), Ativo: d.Ativo, L: d._linha }));
-  return { eu: ctx.eu, pessoas: ctx.pessoas.map((p) => ({ nome: p.nome, perfil: p.perfil })), closers: ctx.closers.map((p) => ({ nome: p.nome, meet: p.meet })), config: ctx.config, clientes, agenda, disp, agora: agora(), listas: { FIN, FONTE } };
+  const leads = (ctx.leads || []).map((r) => ({
+    ID: r.ID, Telefone: fone(r.Telefone), Nome: String(r.Nome || ''), Tipo: r.Tipo || '', Credito: num(r['Crédito']), Entrada: num(r.Entrada), Parcela: num(r.Parcela),
+    Prazo: String(r.Prazo || ''), Contemplada: String(r.Contemplada || ''), Experiencia: String(r['Experiência'] || ''), Disse: String(r['O que disse'] || ''), ObsDeia: String(r['Observação da Deia'] || ''),
+    EtapaDeia: String(r['Etapa na Deia'] || ''), Origem: String(r.Origem || ''), Status: r.Status || 'Novo', Responsavel: String(r['Responsável'] || ''), Obs: String(r['Obs da Paula'] || ''),
+    Recebido: String(r['Recebido em'] || ''), Atualizado: String(r['Atualizado em'] || ''), Quem: String(r['Quem mexeu'] || ''), Tf: String(r['Nosso número'] || '').padStart(4, '0').slice(-4).replace(/^0000$/, ''),
+  }));
+  return { leads, eu: ctx.eu, pessoas: ctx.pessoas.map((p) => ({ nome: p.nome, perfil: p.perfil })), closers: ctx.closers.map((p) => ({ nome: p.nome, meet: p.meet })), config: ctx.config, clientes, agenda, disp, agora: agora(), listas: { FIN, FONTE } };
 }
 
 /* ---------- validações ---------- */
@@ -122,8 +134,52 @@ function travaPendencia(ctx, ignorarId) {
 const podeMexer = (ctx, a) => ctx.eu.perfil === 'gestor' || (ctx.eu.perfil === 'closer' && norm(a.Closer) === norm(ctx.eu.nome)) || (ctx.eu.perfil === 'sdr' && norm(a['SDR (quem agendou)']) === norm(ctx.eu.nome));
 const ehCloserDe = (ctx, a) => ctx.eu.perfil === 'gestor' || (ctx.eu.perfil === 'closer' && norm(a.Closer) === norm(ctx.eu.nome));
 
+const leadGravar = (r) => gravar(`'Leads'!A${r._linha}:${letra(LEADS.length - 1)}${r._linha}`, [linhaDe(LEADS, r)]);
+const txt = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
+
 /* ---------- ações ---------- */
 export const acoes = {
+  // Chega do sistema de WhatsApp (chave da Deia, perfil SDR). Mesmo telefone = mesma linha: atualiza os dados e o que a pessoa disse,
+  // mas nunca mexe no Status nem na Obs que a Paula marcou.
+  async receberLead(ctx, c) {
+    if (!['sdr', 'gestor'].includes(ctx.eu.perfil)) throw new Erro('Só a SDR (ou o gestor) manda lead.', 403);
+    const tel = fone(c.telefone);
+    if (tel.length < 10 || tel.length > 11) throw new Erro('Telefone inválido.');
+    const t = agora();
+    const dados = {
+      Telefone: tel, Nome: txt(c.nome, 80), Tipo: txt(c.tipo, 40), 'Crédito': num(c.cred) || '', Entrada: num(c.ent) || '', Parcela: num(c.par) || '', Prazo: txt(c.prazo, 60),
+      Contemplada: txt(c.contemplada, 20), 'Experiência': txt(c.experiencia, 60), 'O que disse': txt(c.resumo, 500), 'Observação da Deia': txt(c.obs, 200), 'Etapa na Deia': txt(c.etapa, 40),
+      Origem: txt(c.origem, 40) || 'WhatsApp', 'Atualizado em': t, 'Nosso número': /^\d{4}$/.test(String(c.tf || '')) ? String(c.tf) : '',
+    };
+    if (!ctx.leads.length && !(await ler(["'Leads'!A1:A1"]).then((x) => (x[0] || []).length).catch(() => 0))) await criarAba('Leads', LEADS);
+    const ex = ctx.leads.find((r) => fone(r.Telefone) === tel);
+    if (ex) {
+      // valor/tipo vazio no envio não apaga o que já tinha
+      for (const k of Object.keys(dados)) if (dados[k] === '' && ex[k] !== '') delete dados[k];
+      await leadGravar({ ...ex, ...dados });
+      return { id: ex.ID, status: ex.Status || 'Novo', msg: 'Lead atualizado.' };
+    }
+    const resp = ctx.closers.find((x) => norm(x.nome) === norm(c.closer)) || ctx.closers[0];
+    const novo = { ID: id('L'), ...dados, Status: 'Novo', 'Responsável': resp ? resp.nome : '', 'Obs da Paula': '', 'Recebido em': t, 'Quem mexeu': ctx.eu.nome };
+    await adicionar('Leads', [linhaDe(LEADS, novo)]);
+    await logar(ctx, tel, 'Lead com interesse chegou do WhatsApp');
+    return { id: novo.ID, status: 'Novo', msg: 'Lead recebido.' };
+  },
+
+  async leadStatus(ctx, c) {
+    const tel = fone(c.telefone);
+    const ex = ctx.leads.find((r) => fone(r.Telefone) === tel);
+    if (!ex) throw new Erro('Lead não encontrado.', 404);
+    if (c.status != null && !ST_LEAD.includes(c.status)) throw new Erro('Status inválido.');
+    const t = agora();
+    const novo = { ...ex, 'Atualizado em': t, 'Quem mexeu': ctx.eu.nome };
+    if (c.status != null) novo.Status = c.status;
+    if (c.obs != null) novo['Obs da Paula'] = txt(c.obs, 500);
+    await leadGravar(novo);
+    await logar(ctx, tel, c.status != null ? `Lead: ${c.status}` : 'Lead: anotou observação');
+    return { msg: c.status != null ? `Lead marcado como ${c.status}.` : 'Observação salva.' };
+  },
+
   async salvarCliente(ctx, c) {
     const tel = fone(c.telefone);
     if (tel.length < 10 || tel.length > 11) throw new Erro('Telefone inválido. Use DDD + número.');
@@ -150,6 +206,9 @@ export const acoes = {
       await adicionar('Agenda', [linhaDe(AG, { ID: id('A'), Telefone: tel, Closer: h.cl.nome, 'SDR (quem agendou)': ctx.eu.nome, 'Início': h.ini, Fim: somaMin(h.ini, 30), Status: 'Agendada', 'Criado em': t, 'Atualizado em': t })]);
       await logar(ctx, tel, `Agendou reunião com ${h.cl.nome} em ${h.ini.slice(8, 10)}/${h.ini.slice(5, 7)} às ${h.ini.slice(11)}`);
     }
+    // veio da aba Leads: marca o lead como agendado (ou chamado)
+    const ld = (ctx.leads || []).find((r) => fone(r.Telefone) === tel);
+    if (ld && !['Fechou', 'Descartado'].includes(ld.Status)) await leadGravar({ ...ld, Status: agendar ? 'Agendou' : (ld.Status === 'Novo' ? 'Chamou' : ld.Status), 'Atualizado em': t, 'Quem mexeu': ctx.eu.nome }).catch(() => {});
     return { msg: (ex ? `Cliente já existia (cadastro nº ${cadN}), dados atualizados. ` : 'Cliente cadastrado. ') + (et ? `Etapa: ${et}.` : agendar ? `Reunião marcada com ${h.cl.nome} em ${h.ini.slice(8, 10)}/${h.ini.slice(5, 7)} às ${h.ini.slice(11)}.` : 'Sem reunião marcada ainda.'), agendou: agendar };
   },
 
